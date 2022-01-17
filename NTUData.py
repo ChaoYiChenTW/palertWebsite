@@ -77,6 +77,17 @@ class Earthquake():
             os.makedirs(f'{self.__dir}/{self.__folder20secAgo}')
         os.system(f'cp {self.__dir}/{self.__folder2minAgo}/* {self.__dir}/{self.__folder20secAgo}')            
     
+    def processData2minAgo(self):
+        print(f'Process data in {self.__dir}/{self.__folder2minAgo}')
+        os.chdir(f'{self.__dir}/{self.__folder2minAgo}')
+        
+        os.system('rm -f A* B* CHGB* HGSD* FUSB* KMNB* LATB* LYUB* MASB* MATB* NACB* NNSB* PHUB* RLNB* SBCB* SSLB* SXI1* TATO* TDCB* TPUB* TWGB* TWKB* VWDT* VWUC* WARB* WFSB* WUSB* YD07* YHNB* YULB* YOJ*')
+        
+        backgroundTime = self.__originTime - 20
+        
+        
+        os.chdir('../../')
+    
     @property
     def parameters(self):
         return self.__parameters
@@ -89,7 +100,8 @@ def main():
     eqUrl = "https://scweb.cwb.gov.tw/en-us/earthquake/imgs/ee2022010805122045003"  ### tmp: remove this line
     dir2storeData = 'data'
     event = Earthquake(eqUrl, dir2storeData)
-    event.downloadData()
+    # event.downloadData()
+    event.processData2minAgo()
     
     
 if __name__ == "__main__":
