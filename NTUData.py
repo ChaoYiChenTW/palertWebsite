@@ -1,15 +1,18 @@
 import linecache
-import shutil
 import os
-import requests
 import re
-from obspy.core import UTCDateTime
+import requests
+import shutil
 from bs4 import BeautifulSoup
+from ftplib import FTP
+from obspy.core import UTCDateTime
 
 class Earthquake():
-    def __init__(self, url):
+    def __init__(self, url, dir):
         self.__url = url
+        self.__dir = dir
         self.__parameters = self.__obtainEqParameters()
+        self.__obtainFoldersName()
         
     def __obtainEqParameters(self):
         parameters = {}
@@ -24,20 +27,56 @@ class Earthquake():
                 lineNum += 1
                 if re.search('eqReportBoxBg', line):
                     break
+                    
         self.__eqNo = int(linecache.getline(f'tmp/tmp.txt', lineNum+3).split()[-1])
-        self.__year = int(linecache.getline(f'tmp/tmp.txt', lineNum+5)[60:64])
-        self.__month = int(linecache.getline(f'tmp/tmp.txt', lineNum+5)[57:59])
-        self.__date = int(linecache.getline(f'tmp/tmp.txt', lineNum+5)[54:56])
+        parameters['Earthquake No.'] = self.__eqNo
+        
+        self.__year = int(linecache.getline(f'tmp/tmp.txt', lineNum+5)[60:64])        
+        self.__month = int(linecache.getline(f'tmp/tmp.txt', lineNum+5)[54:56])
+        self.__date = int(linecache.getline(f'tmp/tmp.txt', lineNum+5)[57:59])
         self.__hour = int(linecache.getline(f'tmp/tmp.txt', lineNum+5)[65:67])
         self.__minute = int(linecache.getline(f'tmp/tmp.txt', lineNum+5)[68:70])
         self.__second = float(linecache.getline(f'tmp/tmp.txt', lineNum+5)[71:75])
         originTimeString = f"{self.__year}-{self.__month:02}-{self.__date:02}T{self.__hour:02}:{self.__minute:02}:{self.__second}+08"
-        self.__originTime = UTCDateTime(originTimeString)
-        parameters['Earthquake No'] = self.__eqNo
+        self.__originTime = UTCDateTime(originTimeString)        
         parameters['Origin Time'] = self.__originTime
-        # shutil.rmtree("tmp")
-        return parameters
         
+        self.__latitude = float(linecache.getline(f'tmp/tmp.txt', lineNum+7)[17:22])
+        self.__latitudeUnit = 'Degree(N)'
+        self.__longitude = float(linecache.getline(f'tmp/tmp.txt', lineNum+7)[24:30])
+        self.__longitudeUnit = 'Degree(E)'
+        self.__depth = float(linecache.getline(f'tmp/tmp.txt', lineNum+9)[15:20])
+        self.__depthUnit = 'km'
+        parameters['Hypocenter'] = [self.__latitude, self.__latitudeUnit, self.__longitude, self.__longitudeUnit, self.__depth, self.__depthUnit]
+        
+        self.__magnitude = float(linecache.getline(f'tmp/tmp.txt', lineNum+11)[22:25])
+        parameters['Magnitude(ML)'] = self.__magnitude
+        
+        shutil.rmtree("tmp")
+        return parameters
+    
+    def __obtainFoldersName(self):
+        datetime2minAgo = self.__originTime - 120
+        self.__folder2minAgo = datetime2minAgo.strftime('%Y%m%d_%H%M%S') + '_MAN'
+        datetime20secAgo = self.__originTime - 20
+        self.__folder20secAgo = datetime20secAgo.strftime('%Y%m%d_%H%M%S') + '_MAN'
+
+    def downloadData(self):
+        ftpNTU = FTP()
+        ftpNTU.connect('140.112.65.220', 2121)  # IP, port
+        ftpNTU.login()  # user, password
+        ftpNTU.cwd(f'events/{self.__year}{self.__month:02d}')
+        bz2FileName = f'{self.__folder2minAgo}.tar.bz2'
+        print('Preparing data. Please be patient...')
+        localfile = open(f'{self.__dir}/' + bz2FileName, 'wb')
+        ftpNTU.retrbinary('RETR ' + bz2FileName, localfile.write)
+        localfile.close()
+        ftpNTU.quit()
+        os.system(f'tar -C {self.__dir} -jxvf {self.__dir}/{bz2FileName}')
+        if not os.path.exists(f'{self.__dir}/{self.__folder20secAgo}'):
+            os.makedirs(f'{self.__dir}/{self.__folder20secAgo}')
+        os.system(f'cp {self.__dir}/{self.__folder2minAgo}/* {self.__dir}/{self.__folder20secAgo}')            
+    
     @property
     def parameters(self):
         return self.__parameters
@@ -48,8 +87,9 @@ def main():
     print("Earthquake Information -> Details -> Earthquake Report")
     # eqUrl = input("Insert url of the earthquake report: ")  ### tmp: remove #
     eqUrl = "https://scweb.cwb.gov.tw/en-us/earthquake/imgs/ee2022010805122045003"  ### tmp: remove this line
-    event = Earthquake(eqUrl)
-    print(event.parameters)
+    dir2storeData = 'data'
+    event = Earthquake(eqUrl, dir2storeData)
+    event.downloadData()
     
     
 if __name__ == "__main__":
