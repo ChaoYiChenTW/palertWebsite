@@ -1,11 +1,13 @@
 import linecache
+import glob
+import numpy as np
 import os
 import re
 import requests
 import shutil
 from bs4 import BeautifulSoup
 from ftplib import FTP
-from obspy.core import UTCDateTime
+from obspy import read, UTCDateTime
 
 class Earthquake():
     def __init__(self, url, dir):
@@ -77,17 +79,28 @@ class Earthquake():
             os.makedirs(f'{self.__dir}/{self.__folder20secAgo}')
         os.system(f'cp {self.__dir}/{self.__folder2minAgo}/* {self.__dir}/{self.__folder20secAgo}')            
     
-    def processData2minAgo(self):
+    def processFolder2minAgo(self):
         print(f'Process data in {self.__dir}/{self.__folder2minAgo}')
         os.chdir(f'{self.__dir}/{self.__folder2minAgo}')
         
         os.system('rm -f A* B* CHGB* HGSD* FUSB* KMNB* LATB* LYUB* MASB* MATB* NACB* NNSB* PHUB* RLNB* SBCB* SSLB* SXI1* TATO* TDCB* TPUB* TWGB* TWKB* VWDT* VWUC* WARB* WFSB* WUSB* YD07* YHNB* YULB* YOJ*')
         
-        backgroundTime = self.__originTime - 20
-        
-        
+        st = read('*TW*')
+        self.sync(st)
+        for tr in st:
+            filename = f'{tr.stats.station}.{tr.stats.channel}.{tr.stats.network}.{tr.stats.location}'
+            tr.trim(self.__originTime-120, self.__originTime+480)
+            tr.write(filename, format="SAC")
+        st = read('*TW*')
         os.chdir('../../')
     
+    @staticmethod
+    def sync(st):
+        maxstart = np.max([tr.stats.starttime for tr in st])
+        minend =  np.min([tr.stats.endtime for tr in st])
+        st.trim(maxstart, minend)
+        
+        
     @property
     def parameters(self):
         return self.__parameters
@@ -101,7 +114,7 @@ def main():
     dir2storeData = 'data'
     event = Earthquake(eqUrl, dir2storeData)
     # event.downloadData()
-    event.processData2minAgo()
+    # event.processFolder2minAgo()
     
     
 if __name__ == "__main__":
