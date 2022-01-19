@@ -59,9 +59,9 @@ class Earthquake():
     
     def __obtainFoldersName(self):
         datetime2minAgo = self.__originTime - 120
-        self.__folder2minAgo = datetime2minAgo.strftime('%Y%m%d_%H%M%S') + '_MAN'
+        self.folder2minAgo = datetime2minAgo.strftime('%Y%m%d_%H%M%S') + '_MAN'
         datetime20secAgo = self.__originTime - 20
-        self.__folder20secAgo = datetime20secAgo.strftime('%Y%m%d_%H%M%S') + '_MAN'
+        self.folder20secAgo = datetime20secAgo.strftime('%Y%m%d_%H%M%S') + '_MAN'
 
     def downloadData(self):
         ftpNTU = FTP()
@@ -79,19 +79,16 @@ class Earthquake():
             os.makedirs(f'{self.__dir}/{self.__folder20secAgo}')
         os.system(f'cp {self.__dir}/{self.__folder2minAgo}/* {self.__dir}/{self.__folder20secAgo}')            
     
-    def processFolder2minAgo(self):
-        print(f'Process data in {self.__dir}/{self.__folder2minAgo}')
-        os.chdir(f'{self.__dir}/{self.__folder2minAgo}')
+    def processData(self, dir2Process, diffStartime, diffEndtime):
+        print(f'Process data in {dir2Process}')
+        os.chdir(dir2Process)
         
         os.system('rm -f A* B* CHGB* HGSD* FUSB* KMNB* LATB* LYUB* MASB* MATB* NACB* NNSB* PHUB* RLNB* SBCB* SSLB* SXI1* TATO* TDCB* TPUB* TWGB* TWKB* VWDT* VWUC* WARB* WFSB* WUSB* YD07* YHNB* YULB* YOJ*')
         
         st = read('*TW*')
         self.sync(st)
-        for tr in st:
-            filename = f'{tr.stats.station}.{tr.stats.channel}.{tr.stats.network}.{tr.stats.location}'
-            tr.trim(self.__originTime-120, self.__originTime+480)
-            tr.write(filename, format="SAC")
-        st = read('*TW*')
+        self.cutWaveform(st, self.__originTime + diffStartime, self.__originTime + diffEndtime)
+        print(st)
         os.chdir('../../')
     
     @staticmethod
@@ -99,8 +96,15 @@ class Earthquake():
         maxstart = np.max([tr.stats.starttime for tr in st])
         minend =  np.min([tr.stats.endtime for tr in st])
         st.trim(maxstart, minend)
-        
-        
+    
+    @staticmethod    
+    def cutWaveform(st, starttime, endtime):        
+        for tr in st:
+            filename = f'{tr.stats.station}.{tr.stats.channel}.{tr.stats.network}.{tr.stats.location}'
+            tr.trim(starttime, endtime)
+            tr.write(filename, format="SAC")
+
+ 
     @property
     def parameters(self):
         return self.__parameters
@@ -111,10 +115,11 @@ def main():
     print("Earthquake Information -> Details -> Earthquake Report")
     # eqUrl = input("Insert url of the earthquake report: ")  ### tmp: remove #
     eqUrl = "https://scweb.cwb.gov.tw/en-us/earthquake/imgs/ee2022010805122045003"  ### tmp: remove this line
-    dir2storeData = 'data'
-    event = Earthquake(eqUrl, dir2storeData)
+    dir2saveData = 'data'
+    event = Earthquake(eqUrl, dir2saveData)
     # event.downloadData()
-    # event.processFolder2minAgo()
+    # event.processData(f'{dir2saveData}/{event.folder2minAgo}', -120, 480)
+    event.processData(f'{dir2saveData}/{event.folder20secAgo}', -20, 100)
     
     
 if __name__ == "__main__":
