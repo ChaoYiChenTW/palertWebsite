@@ -128,8 +128,8 @@ class Earthquake():
         self.dfStations.columns =['staName', 'staLatitude', 'staLongitude']
         self.dfStations.set_index('staName', inplace=True)
         os.chdir(f'{self.__dir}/{self.folder20secAgo}')        
-        # self.__getPGAs()
-        self.__saveStaInfo2Sac()
+        self.__getPGAs()
+        # self.__saveStaInfo2Sac()
         os.chdir('../../../')
         
     def __getPGAs(self):
@@ -141,11 +141,11 @@ class Earthquake():
         originTimehhmmss = self.__originTimeUTC.strftime('%H%M%S')
         f.write(f'{self.__originTimeUTC.year} {self.__originTimeUTC.month:02} {self.__originTimeUTC.day:02} {originTimehhmmss} {self.__latitude} {self.__longitude} {self.__depth} {self.__magnitude}\n')
         
-        for i in range(len(self.dfStations)):
-            p = subprocess.Popen(["/home/palert/data/rdsac2", self.dfStations.loc[i, 0]], stdout=subprocess.PIPE)
+        for sta in list(self.dfStations.index):
+            p = subprocess.Popen(["/home/palert/data/rdsac2", sta], stdout=subprocess.PIPE)
             pgas = p.communicate()[0].decode("utf-8").split()
             if float(pgas[0]) > 0:
-                f.write(f'{self.dfStations.loc[i, 0]} {self.dfStations.loc[i, 1]:.6f} {self.dfStations.loc[i, 2]:.6f} {float(pgas[0])} {float(pgas[1])} {float(pgas[2])} {float(pgas[3])}\n')
+                f.write(f"{sta} {self.dfStations.loc[sta, 'staLatitude']:.6f} {self.dfStations.loc[sta, 'staLongitude']:.6f} {float(pgas[0])} {float(pgas[1])} {float(pgas[2])} {float(pgas[3])}\n")
         f.close()
 
     def __saveStaInfo2Sac(self):
