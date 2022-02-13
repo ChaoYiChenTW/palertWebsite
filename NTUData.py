@@ -74,7 +74,7 @@ class Earthquake():
 
     def downloadData(self):
         ftpNTU = FTP()
-        ftpNTU.connect('140.112.65.220', 2121)  # IP, port
+        ftpNTU.connect('***.***.***.***', 2121)  # IP, port
         ftpNTU.login()  # user, password
         ftpNTU.cwd(f'events/{self.__originTimeUTC.year}{self.__originTimeUTC.month:02d}')
         bz2FileName = f'{self.folder2minAgo}.tar.bz2'
