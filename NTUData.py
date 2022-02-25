@@ -1,4 +1,4 @@
-import glob
+﻿import glob
 import linecache
 import numpy as np
 import os
@@ -7,6 +7,7 @@ import re
 import requests
 import shutil
 import subprocess
+import sys 
 from bs4 import BeautifulSoup
 from ftplib import FTP
 from obspy import read, UTCDateTime
@@ -69,7 +70,20 @@ class Earthquake():
     def __obtainFoldersName(self):
         datetime2minAgo = self.__originTimeUTC - 120
         self.folder2minAgo = datetime2minAgo.strftime('%Y%m%d_%H%M%S') + '_MAN'
-        datetime20secAgo = self.__originTimeUTC - 20
+        ftpNTU = FTP()
+        ftpNTU.connect('140.112.65.220', 2121)  # IP, port
+        ftpNTU.login()  # user, password
+        ftpNTU.cwd(f'events/{self.__originTimeUTC.year}{self.__originTimeUTC.month:02d}')
+        if f'{self.folder2minAgo}.tar.bz2' not in ftpNTU.nlst():
+            datetime2minAgo = self.__originTimeUTC - 120 + 1
+            self.folder2minAgo = datetime2minAgo.strftime('%Y%m%d_%H%M%S') + '_MAN'
+            if f'{self.folder2minAgo}.tar.bz2' not in ftpNTU.nlst():
+                datetime2minAgo = self.__originTimeUTC - 120 - 1
+                self.folder2minAgo = datetime2minAgo.strftime('%Y%m%d_%H%M%S') + '_MAN'
+                if f'{self.folder2minAgo}.tar.bz2' not in ftpNTU.nlst():
+                    sys.exit('This event doesn\'t exit in NTU server.')
+        ftpNTU.quit()
+        datetime20secAgo = datetime2minAgo + 100
         self.folder20secAgo = datetime20secAgo.strftime('%Y%m%d_%H%M%S') + '_MAN'
 
     def downloadData(self):
@@ -108,7 +122,7 @@ class Earthquake():
             sac.evdp = self.__depth
             sac.mag = self.__magnitude
             sac.write(file)
-        os.chdir('../../../')
+        os.chdir('/home/palert/data')
     
     @staticmethod
     def sync(st):
@@ -122,43 +136,117 @@ class Earthquake():
             filename = f'{tr.stats.station}.{tr.stats.channel}.{tr.stats.network}.{tr.stats.location}'
             tr.trim(starttime, endtime)
             tr.write(filename, format="SAC")
-
-    def tmp(self):
-        self.dfStations = pd.read_csv('stalist.txt', sep=" ",header=None)
-        self.dfStations.columns =['staName', 'staLatitude', 'staLongitude']
-        self.dfStations.set_index('staName', inplace=True)
-        os.chdir(f'{self.__dir}/{self.folder20secAgo}')        
-        self.__getPGAs()
-        # self.__saveStaInfo2Sac()
-        os.chdir('../../../')
+    
+    def getPGAsDataframe(self):
+        print(f'Get pgas dataframe...')
+        self.df = pd.read_csv('stalist.txt', sep=" ",header=None)
+        self.df.columns =['staName', 'staLatitude', 'staLongitude']
+        self.df['PGAsMaxInENZ'] = 0
+        self.df['intensity'] = 0
+        self.df['PGAsResultantOfENZ'] = 0
+        self.df['PGAsResultantOfEN'] = 0
         
-    def __getPGAs(self):
-        print(f'Get pgas...')
+        os.chdir(f'{self.__dir}/{self.folder20secAgo}')
+        for i, row in self.df.iterrows():
+            p = subprocess.Popen(["/home/palert/data/rdsac2", row['staName']], stdout=subprocess.PIPE)
+            pgas = p.communicate()[0].decode("utf-8").split()
+            self.df.loc[i, 'PGAsMaxInENZ'] = float(pgas[0])
+            self.df.loc[i, 'intensity'] = float(pgas[1])
+            self.df.loc[i, 'PGAsResultantOfENZ'] = float(pgas[2])
+            self.df.loc[i, 'PGAsResultantOfEN'] = float(pgas[3])
+        os.chdir('../../../')        
+
+    def getPGAsFilename(self):
         fileTime = self.__originTimeUTC.strftime('%Y%m%d%H%M%S')
-        fileName = f'{self.__dir}/{self.folder20secAgo}/{fileTime}PGAs.txt'
-        f = open(fileName, "w")
+        self.__filePGAs = f'{self.__dir}/{self.folder20secAgo}/{fileTime}PGAs.txt'
+        self.__filePGAs_1 = f'{self.__dir}/{self.folder20secAgo}/{fileTime}PGAs_1.txt'
+    
+    def getPGAsFile(self):        
+        os.chdir(f'{self.__dir}/{self.folder20secAgo}')
+        print(f'Get {self.__filePGAs}...')
+        
+        f = open(self.__filePGAs, "w")
         
         originTimehhmmss = self.__originTimeUTC.strftime('%H%M%S')
         f.write(f'{self.__originTimeUTC.year} {self.__originTimeUTC.month:02} {self.__originTimeUTC.day:02} {originTimehhmmss} {self.__latitude} {self.__longitude} {self.__depth} {self.__magnitude}\n')
         
-        for sta in list(self.dfStations.index):
-            p = subprocess.Popen(["/home/palert/data/rdsac2", sta], stdout=subprocess.PIPE)
-            pgas = p.communicate()[0].decode("utf-8").split()
-            if float(pgas[0]) > 0:
-                f.write(f"{sta} {self.dfStations.loc[sta, 'staLatitude']:.6f} {self.dfStations.loc[sta, 'staLongitude']:.6f} {float(pgas[0])} {float(pgas[1])} {float(pgas[2])} {float(pgas[3])}\n")
+        for i in range(len(self.df)):
+            if self.df.loc[i, 'PGAsMaxInENZ'] > 0:
+                f.write(f"{self.df.loc[i, 'staName']} {self.df.loc[i, 'staLatitude']:.6f} {self.df.loc[i, 'staLongitude']:.6f} {self.df.loc[i, 'PGAsMaxInENZ']} {self.df.loc[i, 'intensity']} {self.df.loc[i, 'PGAsResultantOfENZ']} {self.df.loc[i, 'PGAsResultantOfEN']}\n")
+        
         f.close()
-
-    def __saveStaInfo2Sac(self):
+        
+        shutil.copyfile(self.__filePGAs, self.__filePGAs_1)
+        if not os.path.exists(f'/var/www/html/palert/pga/staticpga/{self.__originTimeUTC.year}'):
+            os.makedirs(f'/var/www/html/palert/pga/staticpga/{self.__originTimeUTC.year}')
+        shutil.copy(self.__filePGAs, '/var/www/html/palert/pga/staticpga/', follow_symlinks=True)
+        shutil.copy(self.__filePGAs_1, '/var/www/html/palert/pga/staticpga/', follow_symlinks=True)
+        shutil.copy(self.__filePGAs, f'/var/www/html/palert/pga/staticpga/{self.__originTimeUTC.year}', follow_symlinks=True)
+        shutil.copy(self.__filePGAs_1, f'/var/www/html/palert/pga/staticpga/{self.__originTimeUTC.year}', follow_symlinks=True)
+        
+        os.chdir('/home/palert/data/')        
+        
+    def saveStaInfo2Sac(self):
+        os.chdir(f'{self.__dir}/{self.folder20secAgo}')
         print(f'Save station informtation to sac files...')
-        for sta in list(self.dfStations.index):
+        for sta in list(self.df.index):
             for comp in ['E', 'N', 'Z']:
                 file = f'{sta}.HL{comp}.TW.--'
                 if os.path.exists(file):
                     sac = SACTrace.read(file)
-                    sac.stla = self.dfStations.loc[sta, 'staLatitude']
-                    sac.stlo = self.dfStations.loc[sta, 'staLongitude']
+                    sac.stla = self.df.loc[sta, 'staLatitude']
+                    sac.stlo = self.df.loc[sta, 'staLongitude']
                     sac.write(file)
-           
+        os.chdir('../../../')
+    
+    def contourMulti(self):
+        os.chdir(f'{self.__dir}/{self.folder20secAgo}')
+        subprocess.run('csh /home/palert/data/contour_multi.csh', shell=True)
+        os.chdir('../../../')
+        
+    def accum3sPGAs(self):
+        originTime = self.__originTimeUTC.strftime('%Y%m%d%H%M%S')
+        os.chdir(f'{self.__dir}/{self.folder20secAgo}')
+        if not os.path.exists("accum"):
+            os.makedirs("accum")
+        os.chdir("accum")
+        for i in range(1,41):
+            os.system('cp ../*TW.-- ./')
+            print(f'cut 0-{3 * i}')
+            st = read('*TW*')
+            starttime = self.__originTimeUTC - 20
+            endtime = starttime + 3 * i
+            self.cutWaveform(st, starttime, endtime)
+            
+            PGAout = f'PGAs_{i:02}'
+            with open(PGAout, 'w') as f:
+                f.write(f"{endtime.strftime('%Y %m %d %H%M%S')}\n")
+                
+                for index, row in self.df.iterrows():
+                    p = subprocess.Popen(["/home/palert/data/rdsac2", row['staName']], stdout=subprocess.PIPE)
+                    pgas = [*map(float, p.communicate()[0].decode("utf-8").split())]
+                    f.write(f"{row['staName']} {row['staLatitude']:.6f} {row['staLongitude']:.6f} {pgas[0]:.3f} {pgas[1]:.2f} {pgas[2]:.3f} {pgas[3]:.3f}\n")
+        os.system('rm -rf *TW*')
+        os.chdir('../')
+        shutil.copytree('accum', f'/var/www/html/palert/pga/staticpga/{originTime}.accum')
+        shutil.copytree('accum', f'/var/www/html/palert/pga/staticpga/{self.__originTimeUTC.year}/{originTime}.accum')
+        os.chdir('/home/palert/data/')
+     
+    def accum3sPGAsPlot(self):
+        os.chdir(f'{self.__dir}/{self.folder20secAgo}')
+        inputfile = self.__filePGAs_1.split('/')[-1]
+        subprocess.run('csh /home/palert/data/gmt.csh', shell=True, input=inputfile, encoding='ascii')
+        # subprocess.run('csh /home/palert/data/gmt_bk.csh', shell=True)
+        os.chdir('/home/palert/data/')
+
+    def passFiles2tesis(self):
+        # 這部分可能要再跟其芳確認一下 (from NTU_xml.csh)
+        return
+        originTime = self.__originTimeUTC.strftime('%Y%m%d%H%M%S')
+        files = [self.__filePGAs, f'{self.__dir}/{originTime}_1.png']
+        paths = []
+        subprocess.run(["scp", FILE, "USER@SERVER:PATH"])
+    
     @property
     def parameters(self):
         return self.__parameters
@@ -172,12 +260,19 @@ def main():
     print("Please find your target event on this website: https://scweb.cwb.gov.tw/en-us/earthquake/data")
     print("Earthquake Information -> Details -> Earthquake Report")
     # eqUrl = input("Insert url of the earthquake report: ")  ### tmp: remove #
-    eqUrl = "https://scweb.cwb.gov.tw/en-us/earthquake/imgs/ee2022010805122045003"  ### tmp: remove this line
+    eqUrl = "https://scweb.cwb.gov.tw/en-us/earthquake/imgs/ee2022010805121947003"
+    ### tmp: remove this line
     event = Earthquake(eqUrl)
     # event.downloadData()
     # event.processData(f'{event.dir}/{event.folder2minAgo}', -120, 480)
     # event.processData(f'{event.dir}/{event.folder20secAgo}', -20, 100)
-    event.tmp()
-    
+    # event.getPGAsDataframe()
+    # event.getPGAsFilename()
+    # event.getPGAsFile()
+    # event.saveStaInfo2Sac()
+    # event.contourMulti()
+    # event.accum3sPGAs()
+    # event.accum3sPGAsPlot()
+
 if __name__ == "__main__":
     main()
